@@ -1,5 +1,4 @@
 // lib/screens/dashboard_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -9,19 +8,29 @@ import '../widgets/transaction_table.dart';
 import '../widgets/transaction_form_dialog.dart';
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+  final List<CompanyTransaction> transactions;
+  final Function(CompanyTransaction) onAdd;
+  final Function(CompanyTransaction) onUpdate;
+  final Function(String) onDelete;
+
+  const DashboardScreen({
+    super.key,
+    required this.transactions,
+    required this.onAdd,
+    required this.onUpdate,
+    required this.onDelete,
+  });
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  final List<CompanyTransaction> _allTransactions = [];
   String _searchQuery = '';
   DateTime? _selectedDate;
 
   List<CompanyTransaction> get _filteredTransactions {
-    return _allTransactions.where((tx) {
+    return widget.transactions.where((tx) {
       final matchesName = tx.description.toLowerCase().contains(_searchQuery.toLowerCase());
       final matchesDate = _selectedDate == null ||
           (tx.dueDate != null &&
@@ -32,8 +41,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }).toList();
   }
 
-  double get _totalIncome => _filteredTransactions.where((tx) => tx.type == TransactionType.gelir).fold(0.0, (s, tx) => s + tx.amount);
-  double get _totalExpense => _filteredTransactions.where((tx) => tx.type == TransactionType.gider).fold(0.0, (s, tx) => s + tx.amount);
+  double get _totalIncome => _filteredTransactions.where((tx) => tx.type == TransactionType.gelir).fold(0.0, (sum, tx) => sum + tx.amount);
+  double get _totalExpense => _filteredTransactions.where((tx) => tx.type == TransactionType.gider).fold(0.0, (sum, tx) => sum + tx.amount);
   double get _totalProfit => _totalIncome - _totalExpense;
 
   void _showMethodSelection(TransactionType type) {
@@ -41,25 +50,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: Text(type == TransactionType.gelir ? 'Gelir Türü Seçin' : 'Gider Türü Seçin'),
+          backgroundColor: Colors.white,
+          title: Text(type == TransactionType.gelir ? 'Gelir Türü Seçin' : 'Gider Türü Seçin', style: const TextStyle(color: Color(0xFF1E293B), fontWeight: FontWeight.bold)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(Icons.money, color: Colors.green),
-                title: const Text('Nakit İşlem'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _openTransactionForm(type, PaymentMethod.nakit);
-                },
+                leading: const Icon(Icons.money, color: Color(0xFF2E7D32)), // Soft Yeşil
+                title: const Text('Nakit İşlem', style: TextStyle(color: Color(0xFF334155))),
+                onTap: () { Navigator.pop(context); _openTransactionForm(type, PaymentMethod.nakit); },
               ),
               ListTile(
-                leading: const Icon(Icons.analytics, color: Colors.blue),
-                title: Text(type == TransactionType.gelir ? 'Çek Giriş Bordrosu' : 'Çek Çıkış Bordrosu'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _openTransactionForm(type, PaymentMethod.cek);
-                },
+                leading: const Icon(Icons.analytics, color: Color(0xFF1565C0)), // Soft Mavi
+                title: Text(type == TransactionType.gelir ? 'Çek Giriş Bordrosu' : 'Çek Çıkış Bordrosu', style: const TextStyle(color: Color(0xFF334155))),
+                onTap: () { Navigator.pop(context); _openTransactionForm(type, PaymentMethod.cek); },
               ),
             ],
           ),
@@ -68,7 +72,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // Yeni veya Düzenleme için formu açan metod
   void _openTransactionForm(TransactionType type, PaymentMethod method, {CompanyTransaction? transactionToEdit}) {
     showDialog(
       context: context,
@@ -78,42 +81,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
           method: method,
           transactionToEdit: transactionToEdit,
           onSave: (savedTransaction) {
-            setState(() {
-              if (transactionToEdit != null) {
-                // Mevcut kaydı bul ve güncelle
-                int index = _allTransactions.indexWhere((t) => t.id == savedTransaction.id);
-                if (index != -1) {
-                  _allTransactions[index] = savedTransaction;
-                }
-              } else {
-                // Yeni kayıt ekle
-                _allTransactions.add(savedTransaction);
-              }
-            });
+            if (transactionToEdit != null) {
+              widget.onUpdate(savedTransaction);
+            } else {
+              widget.onAdd(savedTransaction);
+            }
+            setState(() {});
           },
         );
       },
     );
   }
 
-  // Silme Onay Penceresi ve İşlemi
   void _deleteTransaction(String id) {
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('İşlemi Sil'),
-          content: const Text('Bu kaydı silmek istediğinize emin misiniz? Bu işlem geri alınamaz.'),
+          backgroundColor: Colors.white,
+          title: const Text('İşlemi Sil', style: TextStyle(color: Color(0xFF1E293B), fontWeight: FontWeight.bold)),
+          content: const Text('Bu kaydı silmek istediğinize emin misiniz?', style: TextStyle(color: Color(0xFF334155))),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('İptal')),
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('İptal', style: TextStyle(color: Colors.grey))),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-              onPressed: () {
-                setState(() {
-                  _allTransactions.removeWhere((tx) => tx.id == id);
-                });
-                Navigator.pop(context);
-              },
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFC62828)), // Soft Koyu Kırmızı
+              onPressed: () { widget.onDelete(id); Navigator.pop(context); setState(() {}); },
               child: const Text('Sil', style: TextStyle(color: Colors.white)),
             ),
           ],
@@ -125,19 +117,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(24.0),
         child: Column(
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
+                const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Göksun Gökmen', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.blue.shade900)),
-                    const Text('Gökmen Yazılım Ltd. Şti.', style: TextStyle(fontSize: 13, color: Colors.grey, fontWeight: FontWeight.w500)),
+                    Text('Göksun Gökmen', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+                    SizedBox(height: 4),
+                    Text('Gökmen Yazılım Ltd. Şti.', style: TextStyle(fontSize: 13, color: Color(0xFF64748B), fontWeight: FontWeight.w500)),
                   ],
                 ),
                 Row(
@@ -145,49 +137,63 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ElevatedButton.icon(
                       icon: const Icon(Icons.add, color: Colors.white),
                       label: const Text('GELİR', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade600),
+                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2E7D32)), // Soft Yeşil
                       onPressed: () => _showMethodSelection(TransactionType.gelir),
                     ),
                     const SizedBox(width: 12),
                     ElevatedButton.icon(
                       icon: const Icon(Icons.remove, color: Colors.white),
                       label: const Text('GİDER', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade600),
+                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFC62828)), // Soft Kırmızı
                       onPressed: () => _showMethodSelection(TransactionType.gider),
                     ),
                   ],
                 )
               ],
             ),
-            const Divider(height: 30, thickness: 1),
+            const Divider(height: 40, thickness: 1, color: Color(0xFFE2E8F0)),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                Expanded(child: SummaryCard(title: 'Toplam Gelir', value: _totalIncome, color: Colors.green)),
-                const SizedBox(width: 8),
-                Expanded(child: SummaryCard(title: 'Toplam Gider', value: _totalExpense, color: Colors.red)),
-                const SizedBox(width: 8),
-                Expanded(child: SummaryCard(title: 'Net Kâr / Zarar', value: _totalProfit, color: Colors.blue)),
+                Expanded(child: SummaryCard(title: 'Toplam Gelir', value: _totalIncome, color: const Color(0xFF2E7D32))),
+                const SizedBox(width: 12),
+                Expanded(child: SummaryCard(title: 'Toplam Gider', value: _totalExpense, color: const Color(0xFFC62828))),
+                const SizedBox(width: 12),
+                Expanded(child: SummaryCard(title: 'Net Kâr / Zarar', value: _totalProfit, color: const Color(0xFF1565C0))),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
             Row(
               children: [
                 Expanded(
                   child: SizedBox(
                     height: 40,
                     child: TextField(
-                      decoration: const InputDecoration(labelText: 'İsme / Firmaya Göre Filtrele', border: OutlineInputBorder(), prefixIcon: Icon(Icons.search), contentPadding: EdgeInsets.symmetric(vertical: 0)),
+                      style: const TextStyle(color: Color(0xFF1E293B), fontSize: 13),
+                      decoration: const InputDecoration(
+                        labelText: 'İsme / Firmaya Göre Filtrele',
+                        labelStyle: TextStyle(color: Color(0xFF64748B)),
+                        border: OutlineInputBorder(),
+                        enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Color(0xFFCBD5E1))),
+                        focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Color(0xFF475569))),
+                        prefixIcon: Icon(Icons.search, color: Color(0xFF64748B)),
+                        contentPadding: EdgeInsets.zero,
+                      ),
                       onChanged: (value) => setState(() => _searchQuery = value),
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 12),
                 SizedBox(
                   height: 40,
                   child: ElevatedButton.icon(
                     icon: const Icon(Icons.date_range, size: 18),
                     label: Text(_selectedDate == null ? 'Vade Filtresi' : DateFormat('dd/MM/yyyy').format(_selectedDate!)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: const Color(0xFF475569),
+                      side: const BorderSide(color: Color(0xFFCBD5E1)),
+                    ),
                     onPressed: () async {
                       final picked = await showDatePicker(context: context, initialDate: DateTime.now(), firstDate: DateTime(2020), lastDate: DateTime(2030));
                       if (picked != null) setState(() => _selectedDate = picked);
@@ -195,18 +201,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ),
                 if (_selectedDate != null)
-                  IconButton(icon: const Icon(Icons.clear, color: Colors.red), onPressed: () => setState(() => _selectedDate = null))
+                  IconButton(icon: const Icon(Icons.clear, color: Color(0xFFC62828)), onPressed: () => setState(() => _selectedDate = null))
               ],
             ),
-            const SizedBox(height: 16),
-            
-            Expanded(
-              child: TransactionTable(
-                transactions: _filteredTransactions,
-                onEdit: (tx) => _openTransactionForm(tx.type, tx.method, transactionToEdit: tx),
-                onDelete: (id) => _deleteTransaction(id),
-              ),
-            ),
+            const SizedBox(height: 20),
+            Expanded(child: TransactionTable(
+              transactions: _filteredTransactions,
+              onEdit: (tx) => _openTransactionForm(tx.type, tx.method, transactionToEdit: tx),
+              onDelete: (id) => _deleteTransaction(id),
+            )),
           ],
         ),
       ),
