@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/transaction_model.dart';
 import 'dashboard_screen.dart';
 import 'analysis_screen.dart';
+import 'reports_screen.dart';
 
 class MainLayout extends StatefulWidget {
   const MainLayout({super.key});
@@ -40,6 +41,7 @@ class _MainLayoutState extends State<MainLayout> {
         onDelete: _deleteTransaction,
       ),
       AnalysisScreen(transactions: _allTransactions),
+      ReportsScreen(transactions: _allTransactions),
     ];
 
     return Scaffold(
@@ -59,6 +61,7 @@ class _MainLayoutState extends State<MainLayout> {
             destinations: const [
               NavigationRailDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: Text('Kayıt / Pano')),
               NavigationRailDestination(icon: Icon(Icons.insights_outlined), selectedIcon: Icon(Icons.insights), label: Text('Finansal Analiz')),
+              NavigationRailDestination(icon: Icon(Icons.summarize_outlined), selectedIcon: Icon(Icons.summarize), label: Text('Raporlar/Özet'))
             ],
           ),
           const VerticalDivider(thickness: 1, width: 1, color: Color(0xFFCBD5E1)),

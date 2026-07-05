@@ -11,6 +11,8 @@ class CompanyTransaction {
   final PaymentMethod method;
   final DateTime date; // Entry Date
 
+  bool get isIncome => type == TransactionType.gelir;
+
   // Check Specific Details
   final DateTime? dueDate; // Vade (Due Date)
   final String? drawerName; // Keşideci (Original Issuer)

@@ -1,5 +1,6 @@
 // lib/screens/analysis_screen.dart
 
+import 'package:financialanalysisapp/widgets/analysis_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
@@ -15,6 +16,9 @@ class AnalysisScreen extends StatefulWidget {
 }
 
 class _AnalysisScreenState extends State<AnalysisScreen> {
+  // Filtre için tarih aralığı değişkeni eklendi
+  DateTimeRange? _selectedDateRange;
+  
   double _currentBalance = 0;
   double _upcomingIncome = 0;
   double _upcomingExpense = 0;
@@ -36,63 +40,67 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
   }
 
   void _calculateForecast() {
-    DateTime today = DateTime.now();
-    DateTime todayStart = DateTime(today.year, today.month, today.day);
-    DateTime thirtyDaysLater = todayStart.add(const Duration(days: 30));
+    // 1. Tarih aralığını belirle (Filtre seçilmediyse varsayılan 30 gün)
+    DateTime startDate = _selectedDateRange?.start ?? DateTime.now();
+    DateTime endDate = _selectedDateRange?.end ?? DateTime.now().add(const Duration(days: 30));
 
-    _currentBalance = 0;
-    _upcomingIncome = 0;
-    _upcomingExpense = 0;
-    _upcomingTransactions = [];
+    // 2. Hesaplama değişkenlerini sıfırla
+    double currentRunningBalance = 0;
+    double totalIncome = 0;
+    double totalExpense = 0;
+    List<CompanyTransaction> filteredTransactions = [];
+    List<FlSpot> spots = [];
 
-    for (var tx in widget.transactions) {
+    // 3. Seçilen aralıktaki işlemleri filtrele
+    filteredTransactions = widget.transactions.where((tx) {
       DateTime txDate = tx.dueDate ?? tx.date;
-      DateTime normalizedTxDate = DateTime(txDate.year, txDate.month, txDate.day);
+      return txDate.isAfter(startDate.subtract(const Duration(days: 1))) &&
+             txDate.isBefore(endDate.add(const Duration(days: 1)));
+    }).toList();
 
-      if (normalizedTxDate.isBefore(todayStart) || normalizedTxDate.isAtSameMomentAs(todayStart)) {
-        _currentBalance += (tx.type == TransactionType.gelir ? tx.amount : -tx.amount);
-      } 
-      else if (normalizedTxDate.isBefore(thirtyDaysLater) || normalizedTxDate.isAtSameMomentAs(thirtyDaysLater)) {
-        _upcomingTransactions.add(tx);
-        if (tx.type == TransactionType.gelir) {
-          _upcomingIncome += tx.amount;
-        } else {
-          _upcomingExpense += tx.amount;
-        }
+    // 4. Gelir ve Gider toplamlarını hesapla
+    for (var tx in filteredTransactions) {
+      if (tx.isIncome) {
+        totalIncome += tx.amount;
+      } else {
+        totalExpense += tx.amount;
       }
     }
 
-    _upcomingTransactions.sort((a, b) => (a.dueDate ?? a.date).compareTo(b.dueDate ?? b.date));
+    // 5. Grafik için bakiye değişimini gün gün hesapla
+    int daysDifference = endDate.difference(startDate).inDays;
+    
+    for (int i = 0; i <= daysDifference; i++) {
+      DateTime currentDate = startDate.add(Duration(days: i));
+      double dailyChange = 0;
 
-    _chartSpots = [];
-    double runningBalance = _currentBalance;
-    _chartSpots.add(FlSpot(0, runningBalance));
-
-    _minY = runningBalance;
-    _maxY = runningBalance;
-
-    for (int i = 1; i <= 30; i++) {
-      DateTime targetDay = todayStart.add(Duration(days: i));
-      double dailyNet = 0;
-
-      for (var tx in _upcomingTransactions) {
+      for (var tx in filteredTransactions) {
         DateTime txDate = tx.dueDate ?? tx.date;
-        if (txDate.year == targetDay.year && txDate.month == targetDay.month && txDate.day == targetDay.day) {
-          dailyNet += (tx.type == TransactionType.gelir ? tx.amount : -tx.amount);
+        if (txDate.year == currentDate.year && 
+            txDate.month == currentDate.month && 
+            txDate.day == currentDate.day) {
+          dailyChange += tx.isIncome ? tx.amount : -tx.amount;
         }
       }
-
-      runningBalance += dailyNet;
-      _chartSpots.add(FlSpot(i.toDouble(), runningBalance));
-
-      if (runningBalance < _minY) _minY = runningBalance;
-      if (runningBalance > _maxY) _maxY = runningBalance;
+      
+      currentRunningBalance += dailyChange;
+      spots.add(FlSpot(i.toDouble(), currentRunningBalance));
     }
 
-    double yRange = _maxY - _minY;
-    if (yRange == 0) yRange = 1000;
-    _minY -= (yRange * 0.1);
-    _maxY += (yRange * 0.1);
+    // 6. UI değişkenlerini güncelle
+    setState(() {
+      _upcomingIncome = totalIncome;
+      _upcomingExpense = totalExpense;
+      _upcomingTransactions = filteredTransactions;
+      _chartSpots = spots;
+
+      if (spots.isNotEmpty) {
+        double minVal = spots.map((e) => e.y).reduce((a, b) => a < b ? a : b);
+        double maxVal = spots.map((e) => e.y).reduce((a, b) => a > b ? a : b);
+        _minY = minVal - 1000;
+        _maxY = maxVal + 1000;
+      }
+    });
   }
 
   @override
@@ -104,24 +112,91 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Aylık Nakit Akışı Öngörüsü (Forecasting)',
-              style: TextStyle(fontSize: 22, color: Color(0xFF1E293B), fontWeight: FontWeight.bold),
+            // BAŞLIK VE FİLTRE BUTONU
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Aylık Nakit Akışı Öngörüsü (Forecasting)',
+                      style: TextStyle(fontSize: 22, color: Color(0xFF1E293B), fontWeight: FontWeight.bold),
+                    ),
+                    Text(
+                      'Seçilen tarihler baz alınarak tahmin hesaplanmıştır.',
+                      style: TextStyle(fontSize: 14, color: Color(0xFF64748B)),
+                    ),
+                  ],
+                ),
+                // FİLTRE BUTONU BURADA
+OutlinedButton.icon(
+                  onPressed: () async {
+                    // showDateRangePicker yerine standart showDialog kullanıyoruz
+                    DateTimeRange? picked = await showDialog<DateTimeRange>(
+                      context: context,
+                      builder: (BuildContext context) {
+                        return Dialog(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          // Dialog boyutunu Container ile sabitliyoruz
+                          child: Container(
+                            width: 400, // Genişliği sabitledik (tüm ekranı kaplamayacak)
+                            height: 520, // Yüksekliği sabitledik
+                            padding: const EdgeInsets.all(8.0),
+                            // Flutter'ın çekirdek DateRangePicker widget'ı
+                            child: DateRangePickerDialog(
+                              firstDate: DateTime(2023),
+                              lastDate: DateTime(2030),
+                              initialDateRange: _selectedDateRange ?? DateTimeRange(
+                                start: DateTime.now(), 
+                                end: DateTime.now().add(const Duration(days: 30))
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    );
+
+                    // Eğer kullanıcı bir tarih seçip "Kaydet/Tamam" dediyse:
+                    if (picked != null) {
+                      setState(() {
+                        _selectedDateRange = picked;
+                        _calculateForecast(); // Verileri ve grafiği yenile
+                      });
+                    }
+                  },
+                  icon: const Icon(Icons.filter_alt_outlined, size: 20, color: Color(0xFF1E293B)),
+                  label: Text(
+                    _selectedDateRange == null
+                        ? 'Tarih Filtrele'
+                        : '${DateFormat('dd/MM/yyyy').format(_selectedDateRange!.start)} - ${DateFormat('dd/MM/yyyy').format(_selectedDateRange!.end)}',
+                    style: const TextStyle(
+                      color: Color(0xFF1E293B),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    side: const BorderSide(color: Color(0xFFE2E8F0)),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 4),
-            const Text(
-              'Sistemdeki vadeler baz alınarak gelecek 30 günün tahmini kasa durumu hesaplanmıştır.',
-              style: TextStyle(fontSize: 14, color: Color(0xFF64748B)),
-            ),
+            
             const SizedBox(height: 24),
 
             Row(
               children: [
                 Expanded(child: _buildMetricCard('Şu Anki Net Kasa', _currentBalance, const Color(0xFF1E293B), Icons.account_balance_wallet)),
                 const SizedBox(width: 16),
-                Expanded(child: _buildMetricCard('+ Beklenen Tahsilat (30 Gün)', _upcomingIncome, const Color(0xFF2E7D32), Icons.arrow_downward)),
+                Expanded(child: _buildMetricCard('Beklenen Tahsilat', _upcomingIncome, const Color(0xFF2E7D32), Icons.arrow_downward)),
                 const SizedBox(width: 16),
-                Expanded(child: _buildMetricCard('- Beklenen Çıkış (30 Gün)', _upcomingExpense, const Color(0xFFC62828), Icons.arrow_upward)),
+                Expanded(child: _buildMetricCard('Beklenen Çıkış', _upcomingExpense, const Color(0xFFC62828), Icons.arrow_upward)),
               ],
             ),
             const SizedBox(height: 24),
@@ -141,86 +216,11 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('30 Günlük Kasa Trendi', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF475569))),
+                            const Text('Seçilen Tarih Aralığı Trendi', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF475569))),
                             const SizedBox(height: 24),
                             Expanded(
-                              child: _chartSpots.isEmpty ? const Center(child: CircularProgressIndicator()) : LineChart(
-                                LineChartData(
-                                  
-                                  // ---> İŞTE BURASI: EKLENEN YENİ TOOLTIP AYARI <---
-                                  lineTouchData: LineTouchData(
-                                    touchTooltipData: LineTouchTooltipData(
-                                      getTooltipColor: (touchedSpot) => const Color(0xFF334155), // Koyu arka plan
-                                      getTooltipItems: (List<LineBarSpot> touchedSpots) {
-                                        return touchedSpots.map((LineBarSpot touchedSpot) {
-                                          return LineTooltipItem(
-                                            '${touchedSpot.y.toStringAsFixed(2)} TL',
-                                            const TextStyle(
-                                              color: Colors.white, // BEYAZ YAZI
-                                              fontWeight: FontWeight.bold, 
-                                              fontSize: 12
-                                            ),
-                                          );
-                                        }).toList();
-                                      },
-                                    ),
-                                  ),
-                                  // --------------------------------------------------
-
-                                  gridData: FlGridData(
-                                    show: true,
-                                    drawVerticalLine: false,
-                                    getDrawingHorizontalLine: (value) => const FlLine(color: Color(0xFFF1F5F9), strokeWidth: 1),
-                                  ),
-                                  titlesData: FlTitlesData(
-                                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                                    bottomTitles: AxisTitles(
-                                      sideTitles: SideTitles(
-                                        showTitles: true,
-                                        reservedSize: 30,
-                                        interval: 5,
-                                        getTitlesWidget: (value, meta) {
-                                          if (value == 0) return _bottomTitleText('Bugün');
-                                          return _bottomTitleText('+${value.toInt()} Gün');
-                                        },
-                                      ),
-                                    ),
-                                    leftTitles: AxisTitles(
-                                      sideTitles: SideTitles(
-                                        showTitles: true,
-                                        reservedSize: 60,
-                                        getTitlesWidget: (value, meta) {
-                                          String text = value >= 1000 ? '${(value / 1000).toStringAsFixed(0)}k' : value.toStringAsFixed(0);
-                                          return Padding(
-                                            padding: const EdgeInsets.only(right: 8.0),
-                                            child: Text(text, style: const TextStyle(color: Color(0xFF64748B), fontSize: 11), textAlign: TextAlign.right),
-                                          );
-                                        },
-                                      ),
-                                    ),
-                                  ),
-                                  borderData: FlBorderData(show: false),
-                                  minX: 0,
-                                  maxX: 30,
-                                  minY: _minY,
-                                  maxY: _maxY,
-                                  lineBarsData: [
-                                    LineChartBarData(
-                                      spots: _chartSpots,
-                                      isCurved: true,
-                                      color: const Color(0xFF1565C0),
-                                      barWidth: 3,
-                                      isStrokeCapRound: true,
-                                      dotData: const FlDotData(show: false),
-                                      belowBarData: BarAreaData(
-                                        show: true,
-                                        color: const Color(0xFF1565C0).withOpacity(0.1),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                              child: _chartSpots.isEmpty ? const Center(child: Text("Gösterilecek veri bulunamadı."))
+                              : AnalysisChart(spots: _chartSpots, minY: _minY, maxY: _maxY),
                             ),
                           ],
                         ),
@@ -240,16 +240,16 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Yaklaşan Vade Listesi', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF475569))),
+                            const Text('Vade Listesi', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF475569))),
                             const Divider(color: Color(0xFFE2E8F0)),
                             Expanded(
                               child: _upcomingTransactions.isEmpty
-                                  ? const Center(child: Text('Önümüzdeki 30 gün için planlanmış bir işlem yok.', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF64748B))))
+                                  ? const Center(child: Text('Seçilen tarihte işlem yok.', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF64748B))))
                                   : ListView.builder(
                                       itemCount: _upcomingTransactions.length,
                                       itemBuilder: (context, index) {
                                         final tx = _upcomingTransactions[index];
-                                        final isIncome = tx.type == TransactionType.gelir;
+                                        final isIncome = tx.isIncome;
                                         return ListTile(
                                           contentPadding: EdgeInsets.zero,
                                           leading: CircleAvatar(
@@ -281,13 +281,6 @@ class _AnalysisScreenState extends State<AnalysisScreen> {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _bottomTitleText(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 10.0),
-      child: Text(text, style: const TextStyle(color: Color(0xFF64748B), fontSize: 11)),
     );
   }
 
